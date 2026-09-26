@@ -21,7 +21,7 @@ import {
   Sparkles,
   Upload,
 } from "lucide-react";
-import { generateQuestions, parseCV, type CVParseResponse } from "@/lib/api";
+import { parseCV, type CVParseResponse } from "@/lib/api";
 
 type Job = {
   id: number;
@@ -38,12 +38,6 @@ const interviewTypeLabels: Record<Job["interviewType"], string> = {
   questions: "Questions",
   audio: "Audio Call",
   coding: "Coding",
-};
-
-const QUESTION_COUNTS: Record<Job["interviewType"], number> = {
-  questions: 30,
-  coding: 15,
-  audio: 20,
 };
 
 export default function CandidatePortal() {
@@ -114,84 +108,54 @@ export default function CandidatePortal() {
     }
   }
 
-  async function handleApply(job: Job) {
+  function handleApply(job: Job) {
     if (!cvFile) {
       toast.error("Upload your CV first", {
-        description: "We need your resume to personalize the AI questions.",
+        description: "We need your resume to evaluate your answers fairly.",
+      });
+      return;
+    }
+
+    // ✅ Use the job's PRE-GENERATED questions — same for every candidate
+    if (!job.questions || job.questions.length === 0) {
+      toast.error("This job has no interview questions yet", {
+        description: "Please contact the recruiter.",
       });
       return;
     }
 
     setApplyingJobId(job.id);
 
-    try {
-      const numQuestions = QUESTION_COUNTS[job.interviewType];
+    // Store the shared questions + candidate identity for the interview room
+    sessionStorage.setItem(
+      `interview_session_${job.id}`,
+      JSON.stringify({
+        questions: job.questions,
+        candidateName: parsedData?.name || "",
+        candidateEmail: parsedData?.email || "",
+        candidateSkills: parsedData?.skills || [],
+        source: "pre-generated",
+      })
+    );
 
-      // Build CV summary from parsed data
-      const cvSummary =
-        parsedData?.skills && parsedData.skills.length > 0
-          ? `Candidate's known skills: ${parsedData.skills.join(", ")}. Name: ${parsedData.name || "Not provided"}. Tailor follow-ups to their background.`
-          : "No detailed CV parsed. Ask broadly about their background and the role.";
+    toast.success("Interview ready!", {
+      description: `You'll answer ${job.questions.length} questions. AI will evaluate your answers individually.`,
+    });
 
-      toast.info("AI is personalizing your interview...", {
-        description: `Generating ${numQuestions} questions based on your CV and this role.`,
-      });
+    const params = new URLSearchParams();
+    params.set("jobId", job.id.toString());
+    if (parsedData?.name) params.set("name", parsedData.name);
+    if (parsedData?.email) params.set("email", parsedData.email);
 
-      const ai = await generateQuestions({
-        job_title: job.title,
-        job_description: job.description,
-        tech_stack: job.techStack,
-        interview_type: job.interviewType,
-        cv_summary: cvSummary,
-        num_questions: numQuestions,
-      });
-
-      // Handle AI errors gracefully
-      if (!ai.questions || ai.questions.length === 0) {
-        toast.error("AI could not generate questions", {
-          description: ai.message || "Please try again later.",
-        });
-        setApplyingJobId(null);
-        return;
+    setTimeout(() => {
+      if (job.interviewType === "coding") {
+        router.push(`/interview/coding?${params.toString()}`);
+      } else if (job.interviewType === "audio") {
+        router.push(`/interview/audio?${params.toString()}`);
+      } else {
+        router.push(`/interview?${params.toString()}`);
       }
-
-      // Store personalized questions in sessionStorage for the interview room
-      sessionStorage.setItem(
-        `interview_session_${job.id}`,
-        JSON.stringify({
-          questions: ai.questions,
-          candidateName: parsedData?.name || "",
-          candidateEmail: parsedData?.email || "",
-          source: ai.source,
-        })
-      );
-
-      toast.success("Interview ready!", {
-        description: `AI generated ${ai.questions.length} personalized questions.`,
-      });
-
-      // Build URL with parsed data
-      const params = new URLSearchParams();
-      params.set("jobId", job.id.toString());
-      if (parsedData?.name) params.set("name", parsedData.name);
-      if (parsedData?.email) params.set("email", parsedData.email);
-
-      setTimeout(() => {
-        if (job.interviewType === "coding") {
-          router.push(`/interview/coding?${params.toString()}`);
-        } else if (job.interviewType === "audio") {
-          router.push(`/interview/audio?${params.toString()}`);
-        } else {
-          router.push(`/interview?${params.toString()}`);
-        }
-      }, 800);
-    } catch {
-      toast.error("Could not prepare interview", {
-        description: "Check the backend is running and try again.",
-      });
-    } finally {
-      setApplyingJobId(null);
-    }
+    }, 600);
   }
 
   return (
@@ -221,7 +185,7 @@ export default function CandidatePortal() {
                   Upload your CV
                 </CardTitle>
                 <CardDescription>
-                  The AI will read this to ask you personalized questions.
+                  The AI will use this to evaluate your answers fairly.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -290,7 +254,7 @@ export default function CandidatePortal() {
             </Card>
           </div>
 
-          {/* Right Column - Open Jobs from Database */}
+          {/* Right Column - Open Jobs */}
           <div className="space-y-4 lg:col-span-2">
             <h2 className="flex items-center gap-2 text-xl font-semibold">
               <Briefcase className="h-5 w-5" /> Open Positions
@@ -335,8 +299,8 @@ export default function CandidatePortal() {
                     className="overflow-hidden transition-shadow hover:shadow-md"
                   >
                     <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
                           <CardTitle className="text-lg">{job.title}</CardTitle>
                           <CardDescription className="mt-1 line-clamp-2">
                             {job.description || "No description provided."}
@@ -344,38 +308,49 @@ export default function CandidatePortal() {
                         </div>
                         <Badge
                           variant="outline"
-                          className="border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300"
+                          className="shrink-0 border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300"
                         >
                           {interviewTypeLabels[job.interviewType]} •{" "}
-                          {QUESTION_COUNTS[job.interviewType]} questions
+                          {job.questions.length} questions
                         </Badge>
                       </div>
                     </CardHeader>
-                    <CardContent className="flex flex-wrap items-center justify-between gap-4 border-t pt-4">
-                      <div className="flex flex-wrap gap-2">
-                        {job.techStack.map((tech) => (
-                          <span
-                            key={tech}
-                            className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                          >
-                            {tech}
+
+                    {/* ✅ FIXED LAYOUT: chips row, then button row — identical on every card */}
+                    <CardContent className="space-y-4 border-t pt-4">
+                      <div className="flex min-h-6 flex-wrap gap-2">
+                        {job.techStack.length === 0 ? (
+                          <span className="text-xs text-slate-400">
+                            No tech stack
                           </span>
-                        ))}
-                      </div>
-                      <Button
-                        onClick={() => handleApply(job)}
-                        className="gap-2"
-                        disabled={!cvFile || isParsing || isApplying}
-                      >
-                        {isApplying ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            AI personalizing...
-                          </>
                         ) : (
-                          <>Apply & Start Interview</>
+                          job.techStack.map((tech) => (
+                            <span
+                              key={tech}
+                              className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                              {tech}
+                            </span>
+                          ))
                         )}
-                      </Button>
+                      </div>
+
+                      <div className="flex items-center justify-end">
+                        <Button
+                          onClick={() => handleApply(job)}
+                          className="min-w-52 justify-center gap-2"
+                          disabled={!cvFile || isParsing || isApplying}
+                        >
+                          {isApplying ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Preparing...
+                            </>
+                          ) : (
+                            <>Apply & Start Interview</>
+                          )}
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 );

@@ -70,7 +70,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # =====================================================
-# CSRF Middleware (Origin + Referer validation)
+# CSRF Middleware (Origin validation)
 # =====================================================
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -211,7 +211,7 @@ def health_check():
 
 
 @app.post("/ai/parse-cv", response_model=CVParseResponse)
-@limiter.limit("5/minute")  # 5 CV parses per minute per IP
+@limiter.limit("5/minute")
 async def parse_cv(request: Request, file: UploadFile = File(...)):
     if client is None:
         return CVParseResponse(name="", email="", skills=[], source="fallback")
@@ -255,7 +255,7 @@ Return ONLY a JSON object in this exact shape:
 
 
 @app.post("/ai/generate-questions", response_model=QuestionResponse)
-@limiter.limit("10/minute")  # 10 question generations per minute
+@limiter.limit("10/minute")
 async def generate_questions(request: Request, req: QuestionRequest):
     num = max(5, min(50, req.num_questions))
 
@@ -377,7 +377,7 @@ Tech Stack: {tech_stack}
 
 
 @app.post("/ai/evaluate-answer", response_model=EvaluateResponse)
-@limiter.limit("30/minute")  # 30 evaluations per minute
+@limiter.limit("30/minute")
 async def evaluate_answer(request: Request, req: EvaluateRequest):
     if client is None:
         return fallback_evaluation(req)
