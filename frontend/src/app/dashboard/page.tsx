@@ -68,20 +68,22 @@ function scorePill(score: number) {
 }
 
 export default async function DashboardPage() {
-  // Run auth + company lookup first
+  // Safe user retrieval alongside company query
   const [company, user] = await Promise.all([
     getCurrentCompany(),
-    currentUser(),
+    currentUser().catch((err) => {
+      console.error("Clerk currentUser error on Dashboard:", err);
+      return null;
+    }),
   ]);
-  
+
   if (!company) return null;
   const companyId = company.id;
 
-  // ⚡ PARALLEL QUERIES — all 4 run at the same time!
+  // Single-batch DB execution
   const [
-    [openJobs],
-    [totalCandidates],
-    [avgRow],
+    [openJobsRow],
+    [candidateStatsRow],
     recentResults,
     companyJobs,
   ] = await Promise.all([
@@ -89,27 +91,43 @@ export default async function DashboardPage() {
       .select({ count: count() })
       .from(jobs)
       .where(and(eq(jobs.companyId, companyId), eq(jobs.status, "Open"))),
+
     db
-      .select({ count: count() })
+      .select({
+        count: count(),
+        avgScore: avg(interviewResults.overallScore),
+      })
       .from(interviewResults)
       .where(eq(interviewResults.companyId, companyId)),
+
     db
-      .select({ avg: avg(interviewResults.overallScore) })
-      .from(interviewResults)
-      .where(eq(interviewResults.companyId, companyId)),
-    db
-      .select()
+      .select({
+        id: interviewResults.id,
+        candidateName: interviewResults.candidateName,
+        candidateEmail: interviewResults.candidateEmail,
+        overallScore: interviewResults.overallScore,
+        createdAt: interviewResults.createdAt,
+        jobId: interviewResults.jobId,
+      })
       .from(interviewResults)
       .where(eq(interviewResults.companyId, companyId))
       .orderBy(desc(interviewResults.createdAt))
       .limit(5),
+
     db
-      .select()
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+      })
       .from(jobs)
       .where(eq(jobs.companyId, companyId)),
   ]);
 
-  const avgScore = avgRow?.avg ? Math.round(Number(avgRow.avg)) : 0;
+  const totalCandidatesCount = candidateStatsRow?.count ?? 0;
+  const avgScore = candidateStatsRow?.avgScore
+    ? Math.round(Number(candidateStatsRow.avgScore))
+    : 0;
+
   const jobTitles = new Map(companyJobs.map((job) => [job.id, job.title]));
   const firstName = user?.firstName ?? null;
 
@@ -142,14 +160,14 @@ export default async function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total Candidates"
-          value={totalCandidates?.count || 0}
+          value={totalCandidatesCount}
           hint="Interviews completed"
           icon={Users}
           tone="violet"
         />
         <StatCard
           label="Open Jobs"
-          value={openJobs?.count || 0}
+          value={openJobsRow?.count || 0}
           hint="Waiting for applicants"
           icon={Briefcase}
           tone="blue"
@@ -163,7 +181,7 @@ export default async function DashboardPage() {
         />
         <StatCard
           label="AI Evaluations"
-          value={totalCandidates?.count || 0}
+          value={totalCandidatesCount}
           hint="Answers graded by Gemini"
           icon={Sparkles}
           tone="amber"
@@ -223,7 +241,7 @@ export default async function DashboardPage() {
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-50 text-sm font-semibold text-violet-700 ring-1 ring-violet-200/60">
-                      {result.candidateName.charAt(0).toUpperCase()}
+                      {result.candidateName ? result.candidateName.charAt(0).toUpperCase() : "?"}
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-900">

@@ -40,15 +40,18 @@ const buttonVariants = cva(
   }
 )
 
+interface ExtendedButtonProps extends ButtonPrimitive.Props {
+  asChild?: boolean
+}
+
 function Button({
   className,
   variant = "default",
   size = "default",
   render,
+  asChild, // Destructured to prevent leaking asChild to DOM
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
-  // When using `render` prop, we're not rendering a native button
-  // So we need to set nativeButton={false} to suppress the warning
+}: ExtendedButtonProps & VariantProps<typeof buttonVariants>) {
   const nativeButton = render ? false : true
 
   return (
